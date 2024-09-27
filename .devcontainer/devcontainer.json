@@ -3,5 +3,6 @@
     "dockerFile": "Dockerfile",
     "context": "..",
     "postCreateCommand": "pip install -r requirements.txt",
-    "remoteUser": "root"
+    "remoteUser": "root",
+    "forwardPorts": [4433]
 }
