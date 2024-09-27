@@ -1,79 +1,113 @@
 
-
-
 # QUIC WebTransport Server with WebRTC 🚀
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/mastashake08/quic-stream/main/logo.svg" alt="Project Logo" width="200"/>
-</p>
-
-A Python-based QUIC and WebTransport server, leveraging the power of **aioquic** and **aiortc** for low-latency, secure communication. This project dynamically generates TLS certificates and supports WebRTC for real-time media streaming to an RTMP server.
+A Python-based server using **aioquic** and **aiortc** to handle QUIC WebTransport connections and WebRTC media streaming. The server allows for low-latency, real-time communication over WebTransport and can relay media tracks to an RTMP server or save them locally using the AIORTC `MediaRecorder`.
 
 ## 🚀 Features
 
-- **WebTransport over QUIC**: Fast, reliable, low-latency communication using QUIC and HTTP/3.
-- **WebRTC Integration**: Real-time peer-to-peer communication via WebRTC for audio/video streaming.
-- **Dynamic TLS Certificates**: No need to store or manage certificates, they are generated on the fly.
-- **Media Relaying**: Seamless forwarding of WebRTC media tracks to an RTMP server using `aiortc`.
+- **WebTransport over QUIC**: Supports WebTransport sessions for low-latency communication.
+- **WebRTC Media Relay**: Relays incoming WebRTC media streams to RTMP or saves them locally.
+- **Dynamic Certificate Management**: Generates self-signed certificates for development or uses specified certificates for production.
+- **Fallback HTTP POST for WebRTC Offer**: Supports WebRTC signaling via HTTP POST if WebTransport is unavailable.
 
 ## 🛠️ Installation
-
-To install the project and its dependencies:
 
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/username/repository.git
-   cd repository
+   git clone https://github.com/mastashake08/quic-stream.git
+   cd your-repo
    ```
 
-2. Install dependencies via `requirements.txt`:
+2. Install the required dependencies:
 
    ```bash
    pip install -r requirements.txt
    ```
 
+   Ensure the following dependencies are installed:
+   - `aioquic`
+   - `aiortc`
+   - `cryptography`
+   - `starlette`
+   - `uvicorn`
+
 ## ⚙️ Usage
 
-1. Run the QUIC WebTransport server with dynamically generated certificates:
+1. **Run the QUIC WebTransport server in development mode** with a self-signed certificate:
 
    ```bash
-   python your_script.py
+   python your_script.py --dev --media-recorder-path "rtmp://your.rtmp.url/stream"
    ```
 
-   The server will run on port `4433` by default.
+   In this mode, the server will dynamically generate a self-signed certificate and relay WebRTC media to an RTMP URL or local file specified by the `--media-recorder-path` flag.
 
-2. Test the server by connecting a WebTransport or WebRTC client.
+2. **Run the QUIC WebTransport server in production mode** with specified SSL certificates:
 
-### Example WebRTC Flow:
+   ```bash
+   python your_script.py --cert path/to/cert.pem --key path/to/key.pem --media-recorder-path "output.mp4"
+   ```
 
-- **Client sends WebRTC offer** as a QUIC datagram.
-- **Server responds** with a WebRTC answer via QUIC datagram.
-- **Media Tracks** are received and forwarded to an RTMP server for live streaming.
+   In production mode, you need to specify the certificate and key files using the `--cert` and `--key` flags. The media recorder path can either be an RTMP URL or a local file path for saving the media.
+
+### Command-Line Options:
+
+- `--dev`: Run in development mode with a self-signed certificate.
+- `--cert`: Path to the SSL certificate (for production mode).
+- `--key`: Path to the SSL private key (for production mode).
+- `--media-recorder-path`: **(Required)** The path for the media recorder, which can be an RTMP URL or a local file (e.g., `output.mp4`).
+
+## Endpoints
+
+1. **WebRTC Offer via HTTP POST**:
+   - The client sends a WebRTC offer in JSON format to the `/offer` endpoint via HTTP POST.
+   
+   Example request body:
+   ```json
+   {
+       "sdp": "v=0...",
+       "type": "offer"
+   }
+   ```
+
+   Example `curl` request:
+   ```bash
+   curl -X POST http://localhost:8080/offer \
+        -H "Content-Type: application/json" \
+        -d '{"sdp": "v=0...","type":"offer"}'
+   ```
+
+2. **WebTransport Initialization**:
+   - The client can initialize a WebTransport session by sending a GET request to `/wt`.
+   
+   Example `curl` request:
+   ```bash
+   curl -X GET http://localhost:8080/wt
+   ```
 
 ## 🧩 How It Works
 
-- The server dynamically generates a self-signed TLS certificate using `cryptography`.
-- QUIC is used as the transport layer for WebTransport sessions, enabling low-latency datagram and stream communication.
-- WebRTC signaling (offer/answer) is handled via QUIC datagrams, avoiding traditional HTTP POST signaling.
-- `aiortc` manages the WebRTC connections and relays media streams to an RTMP server using `MediaRecorder`.
+- The server handles QUIC WebTransport sessions using `aioquic`. WebRTC offers can be sent via QUIC datagrams, and the media streams are relayed to an RTMP server or saved locally.
+- If WebTransport is not available, clients can send WebRTC offers using a POST request to the `/offer` endpoint.
+- WebRTC media is handled by `aiortc` and can be relayed to an RTMP stream or saved locally using the `MediaRecorder`.
 
-## 💡 Example SVG Logo (You can customize this)
+## Example WebRTC Flow
 
-```svg
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="200" height="200">
-  <circle cx="50" cy="50" r="48" fill="#61DAFB" stroke="#000" stroke-width="4"/>
-  <text x="50%" y="50%" fill="#000" font-size="12" text-anchor="middle" alignment-baseline="central" font-family="Arial, Helvetica, sans-serif">
-    QUIC + WebRTC
-  </text>
-</svg>
-```
+- **Client sends WebRTC offer** as a QUIC datagram or HTTP POST request.
+- **Server responds** with a WebRTC answer via QUIC or HTTP POST response.
+- **Media Tracks** are received and forwarded to an RTMP server or saved locally.
 
-Save this SVG code as `logo.svg` in your project directory or in an appropriate folder in your GitHub repository.
+### Development Mode:
+
+- In development mode, the server dynamically generates a self-signed TLS certificate. This is useful for local testing without needing to provide SSL certificates.
+
+### Production Mode:
+
+- In production mode, you need to provide the SSL certificate and key paths for secure communication over QUIC.
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome! Feel free to check out the [issues page](https://github.com/username/repository/issues) if you want to contribute.
+Contributions, issues, and feature requests are welcome! Feel free to check out the [issues page](https://github.com/your-username/your-repo/issues).
 
 1. Fork the project.
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
@@ -90,35 +124,18 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 > Made with ❤️ using Python, aioquic, and aiortc.
 ```
 
-### Customization Details
+### Customizations and Explanations:
 
-1. **SVG Logo**:
-   - You can customize the SVG logo to fit your branding or project needs. The current logo is a basic circular graphic with text, which you can modify or replace with a more sophisticated design.
+1. **`--media-recorder-path`**:
+   - The usage of the `--media-recorder-path` argument is highlighted. This can be used to relay WebRTC media streams to an RTMP URL or save them to a local file.
 
-2. **Repository URLs**:
-   - Be sure to replace all instances of `https://github.com/username/repository` with your actual GitHub username and repository name.
+2. **Command-line usage**:
+   - The command-line examples show how to run the server in both development and production modes.
+   - The required arguments `--media-recorder-path` and the optional `--dev`, `--cert`, and `--key` arguments are explained.
 
-3. **Installation and Usage**:
-   - Make sure the instructions match your actual project structure and script names (replace `your_script.py` with your actual script file if necessary).
+3. **Endpoints**:
+   - I’ve documented the `/offer` and `/wt` endpoints and provided example `curl` requests to test them.
 
-4. **Contributing**:
-   - The contributing section is a basic guideline. You can expand it to include code style guidelines, testing instructions, or any specific requirements for contributors.
+4. **Contribution**:
+   - Added contribution guidelines to encourage collaborative improvements.
 
-### How to Add the SVG Logo
-
-1. Save the SVG logo code into a file called `logo.svg` in your repository. For example, you can create a directory named `assets` and save the logo there (`assets/logo.svg`).
-   
-2. Update the image link in the markdown to point to that file:
-   ```html
-   <img src="https://raw.githubusercontent.com/username/repository/main/assets/logo.svg" alt="Project Logo" width="200"/>
-   ```
-
-3. Push the changes to your GitHub repository, and the logo will be displayed directly in your README file.
-
-### How to Use This
-
-1. **Create `README.md`**: Save the markdown content above into a file called `README.md`.
-   
-2. **Push to GitHub**: Commit the changes and push to your GitHub repository.
-   
-3. **View on GitHub**: The `README.md` will be displayed automatically on the repository homepage, complete with the embedded SVG logo.

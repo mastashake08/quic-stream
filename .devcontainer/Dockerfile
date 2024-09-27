@@ -16,5 +16,7 @@ COPY . .
 # Expose port 4433 for the QUIC server
 EXPOSE 4433
 
+EXPOSE 8080
+
 # Set the default command to run your script
-CMD ["python", "server.py"]
+CMD ["python", "server.py", "--dev", "--media-recorder-path", "output.mp4"]

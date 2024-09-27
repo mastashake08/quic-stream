@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import time
+import argparse
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
@@ -15,12 +16,15 @@ from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import DatagramFrameReceived, ProtocolNegotiated
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRecorder
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 from datetime import datetime, timedelta
 
 # WebRTC Handling
 pcs = set()
 
-async def handle_webrtc_offer(offer_sdp: str):
+async def handle_webrtc_offer(offer_sdp: str, media_recorder_path: str):
     offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
     pc = RTCPeerConnection()
 
@@ -31,10 +35,10 @@ async def handle_webrtc_offer(offer_sdp: str):
     async def on_track(track):
         print(f"Track {track.kind} received")
 
-        # Relay media to an RTMP stream using aiortc's MediaRecorder
-        recorder = MediaRecorder("rtmp://your.rtmp.url/stream")
+        # Relay media to the specified MediaRecorder path
+        recorder = MediaRecorder(media_recorder_path)
 
-        await recorder.addTrack(track)
+        recorder.addTrack(track)
         await recorder.start()
 
         @track.on("ended")
@@ -49,6 +53,7 @@ async def handle_webrtc_offer(offer_sdp: str):
     return pc.localDescription.sdp
 
 
+# WebTransport handler for QUIC
 class WebTransportHandler:
     def __init__(self, *, connection: H3Connection, stream_id: int, transmit) -> None:
         self.connection = connection
@@ -137,27 +142,8 @@ class HttpServerProtocol(QuicConnectionProtocol):
             for http_event in self._http.handle_event(event):
                 self.http_event_received(http_event)
 
-def get_certificate_hash(cert_path):
-    # Load the certificate from file
-    with open(cert_path, "rb") as cert_file:
-        cert_data = cert_file.read()
 
-    # Parse the certificate
-    cert = x509.load_pem_x509_certificate(cert_data, default_backend())
-
-    # Convert the certificate to DER format
-    cert_der = cert.public_bytes(serialization.Encoding.DER)
-
-    # Hash the DER-encoded certificate using SHA256
-    sha256_hash = hashes.Hash(hashes.SHA256(), backend=default_backend())
-    sha256_hash.update(cert_der)
-
-    # Get the digest of the certificate
-    cert_hash = sha256_hash.finalize()
-
-    # Return the hash as a hex string
-    return cert_hash.hex()
-
+# Certificate generation and saving
 def generate_self_signed_cert(cert_dir="certs"):
     # Ensure the directory exists
     os.makedirs(cert_dir, exist_ok=True)
@@ -208,11 +194,8 @@ def generate_self_signed_cert(cert_dir="certs"):
 
 
 # QUIC Server Entry
-async def main():
-    # Generate and save the self-signed certificate and key
-    cert_path, key_path = generate_self_signed_cert()
-
-    # Set up QUIC configuration with the generated cert and key
+async def run_quic_server(cert_path, key_path):
+    # Set up QUIC configuration with the provided cert and key
     configuration = QuicConfiguration(is_client=False)
     configuration.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
@@ -225,8 +208,7 @@ async def main():
     )
 
     print("QUIC WebTransport server is running on port 4433")
-    cert_hash = get_certificate_hash(cert_path)
-    print(f"SHA256 hash of the certificate: {cert_hash}")
+
     # Keep the server running indefinitely
     try:
         while True:
@@ -235,6 +217,53 @@ async def main():
         print("Server shutting down...")
 
 
+# Starlette app for POST fallback and WebTransport initialization
+async def webrtc_offer(request):
+    params = await request.json()
+    offer_sdp = params["sdp"]
+    answer_sdp = await handle_webrtc_offer(offer_sdp, media_recorder_path=args.media_recorder_path)
+    return JSONResponse({"sdp": answer_sdp, "type": "answer"})
+
+async def initialize_webtransport(request):
+    # This is just a placeholder to initialize a WebTransport session
+    return JSONResponse({"status": "WebTransport session initialized"})
+
+# Starlette application
+app = Starlette(
+    debug=True,
+    routes=[
+        Route("/offer", webrtc_offer, methods=["POST"]),
+        Route("/wt", initialize_webtransport, methods=["GET"])
+    ]
+)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())
+
+    # Set up argument parsing for dev mode and media recorder path
+    parser = argparse.ArgumentParser(description="QUIC WebTransport Server")
+    parser.add_argument('--dev', action='store_true', help="Run in development mode with self-signed certificate")
+    parser.add_argument('--cert', type=str, help="Path to the SSL certificate (in production)")
+    parser.add_argument('--key', type=str, help="Path to the SSL key (in production)")
+    parser.add_argument('--media-recorder-path', type=str, required=True, help="Path for the media recorder (e.g., RTMP or local file)")
+    args = parser.parse_args()
+
+    loop = asyncio.get_event_loop()
+
+    # Check if we are in dev mode
+    if args.dev:
+        # Generate and use self-signed cert in dev mode
+        cert_path, key_path = generate_self_signed_cert()
+    else:
+        # Use provided cert and key in production mode
+        if not args.cert or not args.key:
+            raise ValueError("In production mode, --cert and --key must be provided")
+        cert_path = args.cert
+        key_path = args.key
+
+    # Run both QUIC server and Starlette HTTP server
+    loop.create_task(run_quic_server(cert_path, key_path))
+
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080, loop=loop)
