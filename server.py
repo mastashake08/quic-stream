@@ -1,3 +1,4 @@
+import os
 import asyncio
 import json
 import logging
@@ -10,7 +11,6 @@ from cryptography.x509.oid import NameOID
 from aioquic.asyncio import QuicConnectionProtocol, serve
 from aioquic.h3.connection import H3_ALPN, H3Connection
 from aioquic.h3.events import HeadersReceived, DatagramReceived
-from aioquic.h3.exceptions import NoAvailablePushIDError
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.events import DatagramFrameReceived, ProtocolNegotiated
 from aiortc import RTCPeerConnection, RTCSessionDescription
@@ -65,7 +65,7 @@ class WebTransportHandler:
     async def receive(self):
         return await self.queue.get()
 
-    async def send(self, message: Dict):
+    async def send(self, message: dict):
         if message["type"] == "webtransport.accept":
             self.accepted = True
             headers = [
@@ -137,8 +137,35 @@ class HttpServerProtocol(QuicConnectionProtocol):
             for http_event in self._http.handle_event(event):
                 self.http_event_received(http_event)
 
+def get_certificate_hash(cert_path):
+    # Load the certificate from file
+    with open(cert_path, "rb") as cert_file:
+        cert_data = cert_file.read()
 
-def generate_self_signed_cert():
+    # Parse the certificate
+    cert = x509.load_pem_x509_certificate(cert_data, default_backend())
+
+    # Convert the certificate to DER format
+    cert_der = cert.public_bytes(serialization.Encoding.DER)
+
+    # Hash the DER-encoded certificate using SHA256
+    sha256_hash = hashes.Hash(hashes.SHA256(), backend=default_backend())
+    sha256_hash.update(cert_der)
+
+    # Get the digest of the certificate
+    cert_hash = sha256_hash.finalize()
+
+    # Return the hash as a hex string
+    return cert_hash.hex()
+
+def generate_self_signed_cert(cert_dir="certs"):
+    # Ensure the directory exists
+    os.makedirs(cert_dir, exist_ok=True)
+
+    # File paths for the cert and key
+    cert_path = os.path.join(cert_dir, "cert.pem")
+    key_path = os.path.join(cert_dir, "key.pem")
+
     # Generate RSA private key
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
 
@@ -165,35 +192,49 @@ def generate_self_signed_cert():
         .sign(private_key, hashes.SHA256(), default_backend())
     )
 
-    # Serialize certificate and private key
-    cert_pem = cert.public_bytes(encoding=serialization.Encoding.PEM)
-    key_pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
+    # Write certificate to file
+    with open(cert_path, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
 
-    return cert_pem, key_pem
+    # Write private key to file
+    with open(key_path, "wb") as f:
+        f.write(private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        ))
+
+    return cert_path, key_path
 
 
 # QUIC Server Entry
 async def main():
-    # Generate dynamic self-signed cert and key
-    cert_pem, key_pem = generate_self_signed_cert()
+    # Generate and save the self-signed certificate and key
+    cert_path, key_path = generate_self_signed_cert()
 
     # Set up QUIC configuration with the generated cert and key
     configuration = QuicConfiguration(is_client=False)
-    configuration.load_cert_chain(certfile=cert_pem, keyfile=key_pem)
+    configuration.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
     # Start the QUIC server
-    await serve(
+    server = await serve(
         host="0.0.0.0",
         port=4433,
         configuration=configuration,
         create_protocol=HttpServerProtocol,
     )
 
+    print("QUIC WebTransport server is running on port 4433")
+    cert_hash = get_certificate_hash(cert_path)
+    print(f"SHA256 hash of the certificate: {cert_hash}")
+    # Keep the server running indefinitely
+    try:
+        while True:
+            await asyncio.sleep(3600)  # Sleep for an hour and continue running
+    except KeyboardInterrupt:
+        print("Server shutting down...")
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
-

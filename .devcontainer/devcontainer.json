@@ -1,0 +1,7 @@
+{
+    "name": "QUIC WebTransport MultiStream Server",
+    "dockerFile": "Dockerfile",
+    "context": "..",
+    "postCreateCommand": "pip install -r requirements.txt",
+    "remoteUser": "root"
+}
