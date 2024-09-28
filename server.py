@@ -21,10 +21,11 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from datetime import datetime, timedelta
 
+MEDIA_OUTPUT_PATH = os.getenv("MEDIA_OUTPUT_PATH", "output.mp4")
 # WebRTC Handling
 pcs = set()
 
-async def handle_webrtc_offer(offer_sdp: str, media_recorder_path: str):
+async def handle_webrtc_offer(offer_sdp: str):
     offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
     pc = RTCPeerConnection()
 
@@ -35,8 +36,8 @@ async def handle_webrtc_offer(offer_sdp: str, media_recorder_path: str):
     async def on_track(track):
         print(f"Track {track.kind} received")
 
-        # Relay media to the specified MediaRecorder path
-        recorder = MediaRecorder(media_recorder_path)
+        # Use the environment variable for the media output path
+        recorder = MediaRecorder(MEDIA_OUTPUT_PATH)
 
         recorder.addTrack(track)
         await recorder.start()
@@ -51,7 +52,6 @@ async def handle_webrtc_offer(offer_sdp: str, media_recorder_path: str):
     await pc.setLocalDescription(answer)
 
     return pc.localDescription.sdp
-
 
 # WebTransport handler for QUIC
 class WebTransportHandler:
@@ -221,7 +221,7 @@ async def run_quic_server(cert_path, key_path):
 async def webrtc_offer(request):
     params = await request.json()
     offer_sdp = params["sdp"]
-    answer_sdp = await handle_webrtc_offer(offer_sdp, media_recorder_path=args.media_recorder_path)
+    answer_sdp = await handle_webrtc_offer(offer_sdp)
     return JSONResponse({"sdp": answer_sdp, "type": "answer"})
 
 async def initialize_webtransport(request):

@@ -1,0 +1,9 @@
+version: '3'
+services:
+  quic-webtransport:
+    build: .
+    ports:
+      - "8080:8080"
+      - "4433:4433"
+    environment:
+      - MEDIA_OUTPUT_PATH=/custom/path/to/output

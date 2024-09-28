@@ -17,6 +17,6 @@ COPY . .
 EXPOSE 4433
 
 EXPOSE 8080
-
+ENV MEDIA_OUTPUT_PATH="/default/media/output"
 # Set the default command to run your script
-CMD ["python", "server.py", "--dev", "--media-recorder-path", "output.mp4"]
+CMD ["python", "server.py", "--dev", "--media-recorder-path", "${MEDIA_OUTPUT_PATH}"]
