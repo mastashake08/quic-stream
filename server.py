@@ -21,7 +21,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from datetime import datetime, timedelta
 
-MEDIA_OUTPUT_PATH = os.getenv("MEDIA_OUTPUT_PATH", "output.mp4")
+MEDIA_OUTPUT_PATH = os.getenv("MEDIA_OUTPUT_PATH", "rtmp://a.rtmp.youtube.com/live2/rc5k-sg6d-b42d-8pb6-aksu")
+print(MEDIA_OUTPUT_PATH)
 # WebRTC Handling
 pcs = set()
 
@@ -30,14 +31,14 @@ async def handle_webrtc_offer(offer_sdp: str):
     pc = RTCPeerConnection()
 
     pcs.add(pc)
-
+    # Use the environment variable for the media output path
+    recorder = MediaRecorder(MEDIA_OUTPUT_PATH, format="flv")
     # Handle incoming tracks
     @pc.on("track")
     async def on_track(track):
         print(f"Track {track.kind} received")
 
-        # Use the environment variable for the media output path
-        recorder = MediaRecorder(MEDIA_OUTPUT_PATH)
+        
 
         recorder.addTrack(track)
         await recorder.start()
